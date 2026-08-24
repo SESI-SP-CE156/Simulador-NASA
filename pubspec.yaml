@@ -35,4 +35,4 @@ inno_bundle:
   arch: x64_compatible
   languages:
     - BrazilianPortuguese
-    - english
+    - English
