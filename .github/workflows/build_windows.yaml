@@ -32,16 +32,9 @@ jobs:
 
       - name: Update app version
         shell: pwsh
+        # Utilizando a abordagem direta e limpa do seu exemplo
         run: |
-          $runNumber = "${{ github.run_number }}"
-          $pubspecPath = "pubspec.yaml"
-          $content = Get-Content $pubspecPath
-
-          # Regex para substituir a versão atual mantendo o build number do Github Actions
-          $content = $content -replace '^version:\s*(.*)', "version: 1.0.$runNumber"
-          Set-Content -Path $pubspecPath -Value $content
-
-          Write-Host "Versão atualizada para: 1.0.$runNumber"
+          powershell -Command "(Get-Content pubspec.yaml) -replace '^version: .*', 'version: 1.0.${{ github.run_number }}' | Set-Content pubspec.yaml"
 
       - name: Run code generation (build_runner)
         run: dart run build_runner build --delete-conflicting-outputs
@@ -50,41 +43,20 @@ jobs:
         run: flutter build windows --release
 
       - name: Generate Inno Setup script
-        run: dart run inno_bundle:build --no-app --release --no-installer
+        run: dart run inno_bundle:build --no-app --release --no-installer[cite: 4]
 
-      - name: Compile Inno Setup Installer (Native)
+      - name: Compile Inno Setup Installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2[cite: 4]
+        with:
+          # Caminho estático correto baseado na saída padrão do inno_bundle
+          path: ./build/windows/x64/installer/Release/inno-script.iss[cite: 4]
+
+      - name: Prepare Windows Artifacts
         shell: pwsh
         run: |
-          # Busca recursivamente qualquer arquivo .iss gerado no diretório build
-          $issFile = Get-ChildItem -Path build -Filter "*.iss" -Recurse | Select-Object -First 1
-
-          if ($issFile) {
-            Write-Host "Arquivo .iss encontrado em: $($issFile.FullName)"
-            
-            # Executa o compilador Inno Setup nativamente no runner, 
-            # evitando problemas de escape de path de actions de terceiros.
-            iscc "`"$($issFile.FullName)`""
-          } else {
-            Write-Error "Nenhum arquivo .iss foi gerado pelo inno_bundle."
-            exit 1
-          }
-
-      - name: Rename generated installer
-        shell: pwsh
-        run: |
-          $runNumber = "${{ github.run_number }}"
-          $newName = "simulador_nasa-v1.0.$runNumber-windows-x86_64.exe"
-
-          # Busca recursivamente o executável gerado na pasta Output
-          $foundExe = Get-ChildItem -Path build -Filter "*.exe" -Recurse | Where-Object { $_.DirectoryName -match "Output" } | Select-Object -First 1
-
-          if ($foundExe) {
-            Move-Item -Path $foundExe.FullName -Destination "./$newName" -Force
-            Write-Host "Instalador movido e renomeado para $newName"
-          } else {
-            Write-Error "Executável do instalador não encontrado."
-            exit 1
-          }
+          # Utiliza curinga (*.exe) para capturar o instalador independentemente do nome padrão do inno_bundle
+          # e padroniza o nome do arquivo na raiz do repositório
+          Move-Item -Path "build\windows\x64\installer\Release\*.exe" -Destination "simulador_nasa-v1.0.${{ github.run_number }}-windows-x86_64.exe"
 
       - name: Upload Installer Artifact
         uses: actions/upload-artifact@v4
