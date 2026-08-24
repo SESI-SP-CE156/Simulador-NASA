@@ -34,5 +34,5 @@ inno_bundle:
   admin: auto
   arch: x64_compatible
   languages:
-    - brazilianportuguese
+    - BrazilianPortuguese
     - english
