@@ -80,7 +80,7 @@ jobs:
       - name: Prepare Windows Artifacts
         if: matrix.os == 'windows-latest'
         run: |
-          Move-Item -Path "build\windowsd\installer\Release\*.exe" -Destination "simulador_nasa-v1.0.${{ github.run_number }}-windows-x86_64.exe"
+          Move-Item -Path "build\windows\x64\installer\Release\*.exe" -Destination "simulador_nasa-v1.0.${{ github.run_number }}-windows-x86_64.exe"
 
       - name: Upload Windows Artifact
         if: matrix.os == 'windows-latest'
