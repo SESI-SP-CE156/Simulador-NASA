@@ -1,6 +1,6 @@
 name: simulador_nasa
 description: "A new Flutter project."
-publish_to: 'none'
+publish_to: "none"
 version: 0.1.0+1
 
 environment:
@@ -22,6 +22,17 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   riverpod_generator: ^2.6.5
   build_runner: ^2.5.4
+  inno_bundle: ^0.12.0
 
 flutter:
   uses-material-design: true
+
+inno_bundle:
+  id: f952abda-79b5-4990-9d06-368770acfff7
+  publisher: SESI-SP CE 156 # Opcional, mas recomendado
+  name: Simulador NASA
+  admin: auto
+  arch: x64_compatible
+  languages:
+    - brazilianportuguese
+    - english

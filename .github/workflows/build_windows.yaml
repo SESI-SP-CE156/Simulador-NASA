@@ -1,0 +1,90 @@
+name: Build Windows App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build and Package for Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Update app version
+        shell: pwsh
+        run: |
+          $runNumber = "${{ github.run_number }}"
+          $pubspecPath = "pubspec.yaml"
+          $content = Get-Content $pubspecPath
+
+          # Regex para substituir a versão atual mantendo o build number do Github Actions
+          $content = $content -replace '^version:\s*(.*)', "version: 1.0.$runNumber"
+          Set-Content -Path $pubspecPath -Value $content
+
+          Write-Host "Versão atualizada para: 1.0.$runNumber"
+
+      - name: Run code generation (build_runner)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Generate Inno Setup script
+        run: dart run inno_bundle:build --no-app --release --no-installer
+
+      - name: Compile Inno Setup Installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          # Caminho padrão onde o inno_bundle gera o arquivo .iss
+          path: build/windows/inno_bundle/simulador_nasa.iss
+
+      - name: Rename generated installer
+        shell: pwsh
+        run: |
+          $runNumber = "${{ github.run_number }}"
+          $newName = "simulador_nasa-v1.0.$runNumber-windows-x86_64.exe"
+
+          # Caminho de saída padrão do compilador Inno Setup via inno_bundle
+          $installerPath = "build/windows/inno_bundle/Output/simulador_nasa.exe"
+
+          if (Test-Path $installerPath) {
+            Move-Item -Path $installerPath -Destination "./$newName" -Force
+            Write-Host "Instalador movido e renomeado para $newName"
+          } else {
+            # Busca como fallback caso a estrutura de diretórios varie levemente
+            $foundExe = Get-ChildItem -Path build/windows -Filter "*.exe" -Recurse | Where-Object { $_.DirectoryName -match "Output" } | Select-Object -First 1
+            if ($foundExe) {
+              Move-Item -Path $foundExe.FullName -Destination "./$newName" -Force
+              Write-Host "Instalador movido e renomeado para $newName"
+            } else {
+              Write-Error "Executável do instalador não encontrado."
+              exit 1
+            }
+          }
+
+      - name: Upload Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulador-nasa-windows
+          path: simulador_nasa-v1.0.${{ github.run_number }}-windows-x86_64.exe
+          if-no-files-found: error
