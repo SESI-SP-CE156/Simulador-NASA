@@ -52,11 +52,27 @@ jobs:
       - name: Generate Inno Setup script
         run: dart run inno_bundle:build --no-app --release --no-installer
 
+      - name: Locate generated .iss file
+        id: locate_iss
+        shell: pwsh
+        run: |
+          # Busca recursivamente qualquer arquivo .iss gerado no diretório build
+          $issFile = Get-ChildItem -Path build -Filter "*.iss" -Recurse | Select-Object -First 1
+
+          if ($issFile) {
+            Write-Host "Arquivo .iss encontrado em: $($issFile.FullName)"
+            # Salva o caminho exato nas variáveis de ambiente do GitHub Actions
+            echo "ISS_PATH=$($issFile.FullName)" >> $env:GITHUB_ENV
+          } else {
+            Write-Error "Nenhum arquivo .iss foi gerado pelo inno_bundle."
+            exit 1
+          }
+
       - name: Compile Inno Setup Installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
         with:
-          # Caminho padrão onde o inno_bundle gera o arquivo .iss
-          path: build/windows/inno_bundle/simulador_nasa.iss
+          # Utiliza o caminho dinâmico descoberto no step anterior
+          path: ${{ env.ISS_PATH }}
 
       - name: Rename generated installer
         shell: pwsh
@@ -64,22 +80,15 @@ jobs:
           $runNumber = "${{ github.run_number }}"
           $newName = "simulador_nasa-v1.0.$runNumber-windows-x86_64.exe"
 
-          # Caminho de saída padrão do compilador Inno Setup via inno_bundle
-          $installerPath = "build/windows/inno_bundle/Output/simulador_nasa.exe"
+          # Busca recursivamente o executável gerado na pasta Output
+          $foundExe = Get-ChildItem -Path build -Filter "*.exe" -Recurse | Where-Object { $_.DirectoryName -match "Output" } | Select-Object -First 1
 
-          if (Test-Path $installerPath) {
-            Move-Item -Path $installerPath -Destination "./$newName" -Force
+          if ($foundExe) {
+            Move-Item -Path $foundExe.FullName -Destination "./$newName" -Force
             Write-Host "Instalador movido e renomeado para $newName"
           } else {
-            # Busca como fallback caso a estrutura de diretórios varie levemente
-            $foundExe = Get-ChildItem -Path build/windows -Filter "*.exe" -Recurse | Where-Object { $_.DirectoryName -match "Output" } | Select-Object -First 1
-            if ($foundExe) {
-              Move-Item -Path $foundExe.FullName -Destination "./$newName" -Force
-              Write-Host "Instalador movido e renomeado para $newName"
-            } else {
-              Write-Error "Executável do instalador não encontrado."
-              exit 1
-            }
+            Write-Error "Executável do instalador não encontrado."
+            exit 1
           }
 
       - name: Upload Installer Artifact
