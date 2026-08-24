@@ -52,8 +52,7 @@ jobs:
       - name: Generate Inno Setup script
         run: dart run inno_bundle:build --no-app --release --no-installer
 
-      - name: Locate generated .iss file
-        id: locate_iss
+      - name: Compile Inno Setup Installer (Native)
         shell: pwsh
         run: |
           # Busca recursivamente qualquer arquivo .iss gerado no diretório build
@@ -61,18 +60,14 @@ jobs:
 
           if ($issFile) {
             Write-Host "Arquivo .iss encontrado em: $($issFile.FullName)"
-            # Salva o caminho exato nas variáveis de ambiente do GitHub Actions
-            echo "ISS_PATH=$($issFile.FullName)" >> $env:GITHUB_ENV
+            
+            # Executa o compilador Inno Setup nativamente no runner, 
+            # evitando problemas de escape de path de actions de terceiros.
+            iscc "`"$($issFile.FullName)`""
           } else {
             Write-Error "Nenhum arquivo .iss foi gerado pelo inno_bundle."
             exit 1
           }
-
-      - name: Compile Inno Setup Installer
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
-        with:
-          # Utiliza o caminho dinâmico descoberto no step anterior
-          path: ${{ env.ISS_PATH }}
 
       - name: Rename generated installer
         shell: pwsh
