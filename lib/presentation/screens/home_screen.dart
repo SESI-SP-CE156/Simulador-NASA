@@ -1,3 +1,4 @@
+// lib/presentation/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:sizer/sizer.dart';
@@ -6,7 +7,10 @@ import 'package:skeletonizer/skeletonizer.dart';
 import '../../domain/models/habitat_result.dart';
 import '../../domain/models/resource_type.dart';
 import '../../domain/services/survival_calculator_service.dart';
+import '../providers/cargo_provider.dart';
 import '../providers/habitat_provider.dart';
+import '../widgets/cargo_selection_panel.dart';
+import '../widgets/resource_stats_bar.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -16,8 +20,18 @@ class HomeScreen extends ConsumerWidget {
     final controller = ref.read(habitatControllerProvider.notifier);
     final inputs = ref.watch(habitatControllerProvider);
     final resultado = ref.watch(habitatResultProvider);
-
     final isEmpty = inputs.isEmpty;
+
+    // 1. Calcula o peso e volume combinados (Recursos dos Sliders + Carga dos Módulos)
+    final cargo = ref.watch(cargoCapacityProvider);
+    final pesoTotalCombinado = resultado.pesoTotalKg + cargo.pesoTotal;
+    final volumeTotalCombinado =
+        resultado.volumeTotalLitros + cargo.volumeTotal;
+
+    final isPesoExcedido =
+        pesoTotalCombinado > SurvivalCalculatorService.limiteCargaKg;
+    final isVolumeExcedido =
+        volumeTotalCombinado > SurvivalCalculatorService.limiteVolumeLitros;
 
     return Scaffold(
       appBar: AppBar(
@@ -41,7 +55,6 @@ class HomeScreen extends ConsumerWidget {
               value: inputs.agua,
               max: inputs.maxAgua,
               step: inputs.stepAgua,
-              idealValue: inputs.diasIdeais * inputs.stepAgua,
               onChanged: controller.updateAgua,
             ),
             SizedBox(height: 1.5.h),
@@ -52,7 +65,6 @@ class HomeScreen extends ConsumerWidget {
               value: inputs.comida,
               max: inputs.maxComida,
               step: inputs.stepComida,
-              idealValue: inputs.diasIdeais * inputs.stepComida,
               onChanged: controller.updateComida,
             ),
             SizedBox(height: 1.5.h),
@@ -63,24 +75,31 @@ class HomeScreen extends ConsumerWidget {
               value: inputs.oxigenio,
               max: inputs.maxOxigenio,
               step: inputs.stepOxigenio,
-              idealValue: inputs.diasIdeais * inputs.stepOxigenio,
               onChanged: controller.updateOxigenio,
             ),
             SizedBox(height: 4.h),
+
+            // 2. Painel de Módulos & Equipamentos (Posicionado antes da análise de lançamento)
+            const CargoSelectionPanel(),
+
+            SizedBox(height: 4.h),
+
             Text(
               'Análise de Lançamento',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             SizedBox(height: 2.h),
+
             Skeletonizer(
               enabled: isEmpty,
               child: Column(
                 children: [
+                  // 3. Marcadores originais reutilizados e alimentados com os dados combinados
                   _CapacityCards(
-                    pesoAtual: isEmpty ? 50000 : resultado.pesoTotalKg,
-                    pesoExcedido: isEmpty ? false : resultado.pesoExcedido,
-                    volumeAtual: isEmpty ? 500000 : resultado.volumeTotalLitros,
-                    volumeExcedido: isEmpty ? false : resultado.volumeExcedido,
+                    pesoAtual: isEmpty ? 50000 : pesoTotalCombinado,
+                    pesoExcedido: isEmpty ? false : isPesoExcedido,
+                    volumeAtual: isEmpty ? 500000 : volumeTotalCombinado,
+                    volumeExcedido: isEmpty ? false : isVolumeExcedido,
                   ),
                   SizedBox(height: 2.h),
                   _ResultCard(
@@ -103,23 +122,16 @@ class HomeScreen extends ConsumerWidget {
     required double value,
     required double max,
     required double step,
-    required double idealValue,
     required void Function(double) onChanged,
   }) {
     final theme = Theme.of(context);
-
-    // Verificação de igualdade com tolerância flutuante para evitar bugs de precisão no Dart
-    final isIdeal = (value - idealValue).abs() < 0.1;
-    final primaryColor = isIdeal ? Colors.green : theme.colorScheme.primary;
+    final primaryColor = theme.colorScheme.primary;
 
     return Container(
       padding: EdgeInsets.symmetric(vertical: 1.h, horizontal: 2.w),
       decoration: BoxDecoration(
-        color: isIdeal
-            ? Colors.green.withValues(alpha: 0.1)
-            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(12),
-        border: isIdeal ? Border.all(color: Colors.green, width: 1.5) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -129,35 +141,11 @@ class HomeScreen extends ConsumerWidget {
               Icon(icon, color: primaryColor, size: 20),
               SizedBox(width: 2.w),
               Expanded(
-                child: Row(
-                  children: [
-                    Text(
-                      label,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (isIdeal) ...[
-                      SizedBox(width: 2.w),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 2.w,
-                          vertical: 0.2.h,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.green,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'Valor Ideal',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                child: Text(
+                  label,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               Text(
@@ -173,8 +161,7 @@ class HomeScreen extends ConsumerWidget {
             value: value,
             min: 0,
             max: max,
-            // Cria os "steps" exigidos dividindo o max pelo tamanho de 1 dia de consumo
-            divisions: (max / step).round(),
+            divisions: (max > 0 && step > 0) ? (max / step).round() : 1,
             activeColor: primaryColor,
             onChanged: onChanged,
           ),
@@ -300,13 +287,26 @@ class _ResultCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final possuiRestricao = resultado.pesoExcedido || resultado.volumeExcedido;
     final inputs = ref.read(habitatControllerProvider);
+    final stats = ref.watch(cargoStatsProvider);
+    final cargo = ref.watch(cargoCapacityProvider);
 
-    // Verifica se os dias atuais cravam com o Ponto de Equilíbrio sem exceder peso/volume
-    final diasAtuais = resultado.diasSobrevivencia.floor();
+    final pesoTotalCombinado = resultado.pesoTotalKg + cargo.pesoTotal;
+    final volumeTotalCombinado =
+        resultado.volumeTotalLitros + cargo.volumeTotal;
+    final possuiRestricao =
+        pesoTotalCombinado > SurvivalCalculatorService.limiteCargaKg ||
+        volumeTotalCombinado > SurvivalCalculatorService.limiteVolumeLitros;
+
+    final isAutossustentavel = resultado.diasSobrevivencia == double.infinity;
+    final diasAtuais = isAutossustentavel
+        ? -1
+        : resultado.diasSobrevivencia.floor();
     final isBalancoPerfeito =
         (diasAtuais == diasIdeais) && !possuiRestricao && !inputs.isEmpty;
+
+    final service = SurvivalCalculatorService();
+    final tempoViagemDias = service.calcularTempoViagemDias(pesoTotalCombinado);
 
     return Card(
       elevation: 4,
@@ -320,6 +320,30 @@ class _ResultCard extends ConsumerWidget {
         padding: EdgeInsets.all(4.w),
         child: Column(
           children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.rocket_launch,
+                      size: 20,
+                      color: Colors.orange,
+                    ),
+                    SizedBox(width: 2.w),
+                    Text('Viagem até Marte', style: theme.textTheme.titleSmall),
+                  ],
+                ),
+                Text(
+                  '~${tempoViagemDias.toStringAsFixed(0)} dias (${(tempoViagemDias / 30).toStringAsFixed(1)} meses)',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -338,17 +362,23 @@ class _ResultCard extends ConsumerWidget {
               ],
             ),
             Text(
-              '${resultado.diasSobrevivencia.toStringAsFixed(1)} dias',
+              isAutossustentavel
+                  ? 'Autossustentável (∞)'
+                  : '${resultado.diasSobrevivencia.toStringAsFixed(1)} dias',
               style: theme.textTheme.displaySmall?.copyWith(
+                fontSize: isAutossustentavel ? 24 : null,
                 color: isBalancoPerfeito
                     ? Colors.green
                     : (possuiRestricao
                           ? theme.colorScheme.outline
-                          : theme.colorScheme.primary),
+                          : (isAutossustentavel
+                                ? Colors.blue
+                                : theme.colorScheme.primary)),
                 fontWeight: FontWeight.bold,
               ),
             ),
             const Divider(height: 30),
+
             _buildResourceStat(
               context: context,
               nome: 'Água',
@@ -372,6 +402,65 @@ class _ResultCard extends ConsumerWidget {
               consumoDiario: resultado.consumoDiarioOxigenio,
               isLimitante: resultado.recursoLimitante == ResourceType.oxigenio,
             ),
+
+            const Divider(height: 20),
+
+            ResourceStatBar(
+              label: 'Gelo Bruto (Mineração)',
+              icone: Icons.ac_unit, // Ícone temático
+              producao: stats['gelo']['prod'],
+              consumo: stats['gelo']['cons'],
+              unidade: stats['gelo']['unidade'],
+            ),
+            ResourceStatBar(
+              label: 'Oxigênio (Módulos)',
+              icone: Icons.air,
+              producao: stats['oxigenio']['prod'],
+              consumo: stats['oxigenio']['cons'],
+              unidade: stats['oxigenio']['unidade'],
+            ),
+            ResourceStatBar(
+              label: 'Água (Módulos)',
+              icone: Icons.water_drop,
+              producao: stats['agua']['prod'],
+              consumo: stats['agua']['cons'],
+              unidade: stats['agua']['unidade'],
+            ),
+            ResourceStatBar(
+              label: 'Energia (Módulos)',
+              icone: Icons.bolt,
+              producao: stats['energia']['prod'],
+              consumo: stats['energia']['cons'],
+              unidade: stats['energia']['unidade'],
+            ),
+            ResourceStatBar(
+              label: 'Comida (Módulos)',
+              icone: Icons.restaurant,
+              producao: stats['comida']['prod'],
+              consumo: stats['comida']['cons'],
+              unidade: stats['comida']['unidade'],
+            ),
+
+            SizedBox(height: 1.h),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Felicidade Geral', style: theme.textTheme.titleSmall),
+                Text(
+                  '${stats['felicidade']}%',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 0.5.h),
+            LinearProgressIndicator(
+              value: (stats['felicidade'] as num) / 100.0,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(4),
+            ),
           ],
         ),
       ),
@@ -387,6 +476,16 @@ class _ResultCard extends ConsumerWidget {
     String? infoExtra,
   }) {
     final theme = Theme.of(context);
+    final isSurplus = consumoDiario <= 0;
+    final valConsumo = consumoDiario.abs();
+
+    // Altera a apresentação baseado em superávit ou déficit
+    final textoConsumo = isSurplus
+        ? '+${valConsumo.toStringAsFixed(1)}/dia (Superávit)'
+        : '-${valConsumo.toStringAsFixed(1)}/dia';
+    final textoDuracao = duracao == double.infinity
+        ? '∞ dias'
+        : '${duracao.toStringAsFixed(1)} dias';
 
     return Container(
       margin: EdgeInsets.only(bottom: 1.5.h),
@@ -394,7 +493,9 @@ class _ResultCard extends ConsumerWidget {
       decoration: BoxDecoration(
         color: isLimitante
             ? theme.colorScheme.errorContainer
-            : theme.colorScheme.surfaceContainerHighest,
+            : (isSurplus
+                  ? Colors.green.withValues(alpha: 0.1)
+                  : theme.colorScheme.surfaceContainerHighest),
         borderRadius: BorderRadius.circular(8),
         border: isLimitante
             ? Border.all(color: theme.colorScheme.error, width: 1.5)
@@ -416,8 +517,11 @@ class _ResultCard extends ConsumerWidget {
                 ),
               ),
               Text(
-                '-${consumoDiario.toStringAsFixed(1)}/dia',
-                style: theme.textTheme.bodySmall,
+                textoConsumo,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: isSurplus ? Colors.green : null,
+                  fontWeight: isSurplus ? FontWeight.bold : FontWeight.normal,
+                ),
               ),
               if (infoExtra != null)
                 Text(
@@ -433,7 +537,7 @@ class _ResultCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${duracao.toStringAsFixed(1)} dias',
+                textoDuracao,
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),

@@ -1,6 +1,8 @@
 import 'dart:math';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:simulador_nasa/domain/models/cargo_item.dart';
+import 'package:simulador_nasa/presentation/providers/cargo_provider.dart';
 
 import '../../domain/models/habitat_result.dart';
 import '../../domain/services/survival_calculator_service.dart';
@@ -129,6 +131,23 @@ class HabitatController extends _$HabitatController {
 @riverpod
 HabitatResult habitatResult(HabitatResultRef ref) {
   final inputs = ref.watch(habitatControllerProvider);
+  final inventory = ref.watch(cargoControllerProvider);
+  final cargoCapacity = ref.watch(
+    cargoCapacityProvider,
+  ); // Pega o peso dos módulos
+
+  double modProdAgua = 0, modConsAgua = 0;
+  double modProdComida = 0;
+  double modProdOxigenio = 0;
+
+  inventory.forEach((id, qtd) {
+    final item = catalogoCarga.firstWhere((e) => e.id == id);
+    modProdAgua += item.prodAgua * qtd;
+    modConsAgua += item.consAgua * qtd;
+    modProdComida += item.prodComida * qtd;
+    modProdOxigenio += item.prodOxigenio * qtd;
+  });
+
   final service = SurvivalCalculatorService();
 
   return service.calcularSobrevivencia(
@@ -137,5 +156,10 @@ HabitatResult habitatResult(HabitatResultRef ref) {
     oxigenioDisponivel: inputs.oxigenio,
     taxaVolumeComida: inputs.taxaVolumeComida,
     taxaAguaReidratacao: inputs.taxaAguaReidratacao,
+    modProdAgua: modProdAgua,
+    modConsAgua: modConsAgua,
+    modProdComida: modProdComida,
+    modProdOxigenio: modProdOxigenio,
+    pesoTotalCargaModulos: cargoCapacity.pesoTotal, // Injeta o peso aqui
   );
 }
